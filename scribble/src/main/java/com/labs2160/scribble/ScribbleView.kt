@@ -5,11 +5,16 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.support.v4.view.MotionEventCompat
+import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 
-class ScribbleView(context: Context): View(context) {
-    private val strokePath = Path()
+class ScribbleView : View {
+    constructor(context: Context) : super(context)
+    constructor(context: Context, attrs: AttributeSet) : super(context, attrs)
+
+    private val strokePaths = Path()
 
     private val paint = Paint().apply {
         isAntiAlias = true
@@ -18,7 +23,7 @@ class ScribbleView(context: Context): View(context) {
         style       = Paint.Style.STROKE
         strokeJoin  = Paint.Join.ROUND
         strokeCap   = Paint.Cap.ROUND
-        strokeWidth = 3F
+        strokeWidth = 6F
     }
 
     private var lastX = 0F
@@ -27,7 +32,7 @@ class ScribbleView(context: Context): View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        canvas.drawPath(strokePath, paint)
+        canvas.drawPath(strokePaths, paint)
 
         invalidate()
     }
@@ -37,29 +42,40 @@ class ScribbleView(context: Context): View(context) {
             return false
         }
 
+        if(event.size > .01F) {
+            return false
+        }
+
         val currentX = event.x
         val currentY = event.y
 
-        when(event.action) {
+        when(MotionEventCompat.getActionMasked(event)) {
             MotionEvent.ACTION_DOWN -> {
-                strokePath.moveTo(currentX, currentY)
+                strokePaths.moveTo(currentX, currentY)
 
                 lastX = currentX
                 lastY = currentY
             }
 
             MotionEvent.ACTION_MOVE -> {
-                strokePath.quadTo(lastX, lastY, (currentX + lastX) / 2, (currentY + lastY) /2)
+                strokePaths.quadTo(lastX, lastY, (currentX + lastX) / 2, (currentY + lastY) / 2)
 
                 lastX = currentX
                 lastY = currentY
             }
 
-            MotionEvent.ACTION_UP -> {
-//                path.lineTo(lastX, lastY)
-            }
+            MotionEvent.ACTION_UP      -> { /* unimplemented */ }
+            MotionEvent.ACTION_CANCEL  -> { /* unimplemented */ }
+            MotionEvent.ACTION_OUTSIDE -> { /* unimplemented */ }
         }
 
         return true
+    }
+
+    fun clear() {
+        if(!strokePaths.isEmpty) {
+            strokePaths.reset()
+            invalidate()
+        }
     }
 }

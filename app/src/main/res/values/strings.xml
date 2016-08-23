@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Android Scribble</string>
+    <string name="scribble_demo_activity_clear_text">Clear</string>
 </resources>
