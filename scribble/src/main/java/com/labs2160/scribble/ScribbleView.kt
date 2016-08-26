@@ -15,6 +15,8 @@ class ScribbleView : RelativeLayout {
     constructor(context: Context, attrs: AttributeSet?) : super(context, attrs) {
         addView(bezelView)
         addView(inkStartAreaView)
+
+        setWillNotDraw(false)
     }
 
     private val bezelView = View(context).apply {
@@ -23,7 +25,7 @@ class ScribbleView : RelativeLayout {
         val widthRestriction  = ViewGroup.LayoutParams.WRAP_CONTENT
         val heightRestriction = ViewGroup.LayoutParams.MATCH_PARENT
 
-        layoutParams = RelativeLayout.LayoutParams(widthRestriction, heightRestriction).apply { width = 100 }
+        layoutParams = RelativeLayout.LayoutParams(widthRestriction, heightRestriction).apply { width = 25 }
 
         setBackgroundColor(Color.BLACK)
 
@@ -33,7 +35,16 @@ class ScribbleView : RelativeLayout {
             if(view.id == R.id.scribble_view_bezel) {
                 result = true
 
-                inkStartAreaView.y = motionEvent.y - (inkStartAreaView.height / 2)
+                val newY = motionEvent.y - (inkStartAreaView.height / 2)
+
+                inkStartAreaView.y = newY
+
+                with(inkStartAreaRect) {
+                    left   = 0
+                    top    = newY.toInt()
+                    right  = inkStartAreaView.width
+                    bottom = newY.toInt() + inkStartAreaView.height
+                }
 
                 if(inkStartAreaView.visibility == View.GONE) {
                     inkStartAreaView.visibility = View.VISIBLE
@@ -53,6 +64,8 @@ class ScribbleView : RelativeLayout {
         layoutParams = RelativeLayout.LayoutParams(widthRestriction, heightRestriction).apply { height = 100 }
 
         setBackgroundColor(Color.GRAY)
+
+        alpha = .1F
 
         visibility = View.GONE
     }
@@ -75,67 +88,71 @@ class ScribbleView : RelativeLayout {
     private var lastX = 0F
     private var lastY = 0F
 
-//    private var showingInkStart
+    private var inkStartAreaRect = Rect(0, 0, 0, 0)
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
 
         canvasBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        canvas       = Canvas(canvasBitmap)
+        canvas = Canvas(canvasBitmap)
     }
 
     override fun onDraw(canvas: Canvas) {
-        with(canvas) {
-            drawBitmap(canvasBitmap, 0F, 0F, paint)
-            drawPath(path, paint)
-        }
+        canvas.drawBitmap(canvasBitmap, 0F, 0F, paint)
+        canvas.drawPath(path, paint)
     }
 
     override fun onTouchEvent(event: MotionEvent?): Boolean {
         if(event == null) {
-            return false
+            return true
+        }
+
+        if(inkStartAreaView.visibility == View.GONE) {
+            return true
         }
 
         val currentX = event.x
         val currentY = event.y
 
-        when(MotionEventCompat.getActionMasked(event)) {
-            MotionEvent.ACTION_DOWN -> {
-                path.reset()
-                path.moveTo(currentX, currentY)
-
-                invalidate()
-
-                lastX = currentX
-                lastY = currentY
-            }
-
-            MotionEvent.ACTION_MOVE -> {
-                val dx = Math.abs(currentX - lastX)
-                val dy = Math.abs(currentY - lastY)
-
-                if(dx >= 4 || dy >= 4) {
-                    path.quadTo(lastX, lastY, (currentX + lastX) / 2, (currentY + lastY) / 2)
+        if(inkStartAreaRect.contains(currentX.toInt(), currentY.toInt())) {
+            when(MotionEventCompat.getActionMasked(event)) {
+                MotionEvent.ACTION_DOWN -> {
+                    path.reset()
+                    path.moveTo(currentX, currentY)
 
                     invalidate()
 
                     lastX = currentX
                     lastY = currentY
                 }
+
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = Math.abs(currentX - lastX)
+                    val dy = Math.abs(currentY - lastY)
+
+                    if(dx >= 4 || dy >= 4) {
+                        path.quadTo(lastX, lastY, (currentX + lastX) / 2, (currentY + lastY) / 2)
+
+                        invalidate()
+
+                        lastX = currentX
+                        lastY = currentY
+                    }
+                }
+
+                MotionEvent.ACTION_UP -> {
+                    path.lineTo(lastX, lastY)
+
+                    canvas.drawPath(path, paint)
+
+                    path.reset()
+
+                    invalidate()
+                }
+
+                MotionEvent.ACTION_CANCEL  -> { /* unimplemented */ }
+                MotionEvent.ACTION_OUTSIDE -> { /* unimplemented */ }
             }
-
-            MotionEvent.ACTION_UP -> {
-                path.lineTo(lastX, lastY)
-
-                canvas.drawPath(path, paint)
-
-                path.reset()
-
-                invalidate()
-            }
-
-            MotionEvent.ACTION_CANCEL  -> { /* unimplemented */ }
-            MotionEvent.ACTION_OUTSIDE -> { /* unimplemented */ }
         }
 
         return true
