@@ -4,11 +4,6 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <com.labs2160.scribble.ScribbleView
-        android:id="@+id/scribble_demo_activity_scribble_view"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
-
     <android.support.v7.widget.Toolbar
         android:id="@+id/scribble_demo_activity_toolbar"
         android:layout_width="match_parent"
@@ -17,5 +12,11 @@
         android:elevation="4dp"
         android:theme="@style/ThemeOverlay.AppCompat.ActionBar"
         app:popupTheme="@style/ThemeOverlay.AppCompat.Light" />
+
+    <com.labs2160.scribble.ScribbleView
+        android:id="@+id/scribble_demo_activity_scribble_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/scribble_demo_activity_toolbar" />
 
 </RelativeLayout>

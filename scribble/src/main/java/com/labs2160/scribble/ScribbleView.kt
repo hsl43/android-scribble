@@ -6,14 +6,55 @@ import android.support.v4.view.MotionEventCompat
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
+import android.widget.RelativeLayout
 
-class ScribbleView : View {
-    constructor(context: Context) : super(context)
-    constructor(context: Context, attrs: AttributeSet) : super(context, attrs)
+class ScribbleView : RelativeLayout {
+    constructor(context: Context) : this(context, null)
 
-    companion object {
-        private val TOUCH_TOLERANCE = 4
-        private val STROKE_WIDTH = 6F
+    constructor(context: Context, attrs: AttributeSet?) : super(context, attrs) {
+        addView(bezelView)
+        addView(inkStartAreaView)
+    }
+
+    private val bezelView = View(context).apply {
+        id = R.id.scribble_view_bezel
+
+        val widthRestriction  = ViewGroup.LayoutParams.WRAP_CONTENT
+        val heightRestriction = ViewGroup.LayoutParams.MATCH_PARENT
+
+        layoutParams = RelativeLayout.LayoutParams(widthRestriction, heightRestriction).apply { width = 100 }
+
+        setBackgroundColor(Color.BLACK)
+
+        setOnTouchListener { view, motionEvent ->
+            var result = false
+
+            if(view.id == R.id.scribble_view_bezel) {
+                result = true
+
+                inkStartAreaView.y = motionEvent.y - (inkStartAreaView.height / 2)
+
+                if(inkStartAreaView.visibility == View.GONE) {
+                    inkStartAreaView.visibility = View.VISIBLE
+                }
+            }
+
+            result
+        }
+    }
+
+    private val inkStartAreaView = View(context).apply {
+        id = R.id.scribble_view_ink_start_area
+
+        val widthRestriction  = ViewGroup.LayoutParams.MATCH_PARENT
+        val heightRestriction = ViewGroup.LayoutParams.WRAP_CONTENT
+
+        layoutParams = RelativeLayout.LayoutParams(widthRestriction, heightRestriction).apply { height = 100 }
+
+        setBackgroundColor(Color.GRAY)
+
+        visibility = View.GONE
     }
 
     private val path = Path()
@@ -25,7 +66,7 @@ class ScribbleView : View {
         style       = Paint.Style.STROKE
         strokeJoin  = Paint.Join.ROUND
         strokeCap   = Paint.Cap.ROUND
-        strokeWidth = STROKE_WIDTH
+        strokeWidth = 6F
     }
 
     private lateinit var canvasBitmap: Bitmap
@@ -33,6 +74,8 @@ class ScribbleView : View {
 
     private var lastX = 0F
     private var lastY = 0F
+
+//    private var showingInkStart
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
@@ -53,10 +96,6 @@ class ScribbleView : View {
             return false
         }
 
-        if(event.size > .01F) {
-            return false
-        }
-
         val currentX = event.x
         val currentY = event.y
 
@@ -64,6 +103,8 @@ class ScribbleView : View {
             MotionEvent.ACTION_DOWN -> {
                 path.reset()
                 path.moveTo(currentX, currentY)
+
+                invalidate()
 
                 lastX = currentX
                 lastY = currentY
@@ -73,8 +114,10 @@ class ScribbleView : View {
                 val dx = Math.abs(currentX - lastX)
                 val dy = Math.abs(currentY - lastY)
 
-                if(dx >= TOUCH_TOLERANCE || dy >= TOUCH_TOLERANCE) {
+                if(dx >= 4 || dy >= 4) {
                     path.quadTo(lastX, lastY, (currentX + lastX) / 2, (currentY + lastY) / 2)
+
+                    invalidate()
 
                     lastX = currentX
                     lastY = currentY
@@ -87,21 +130,14 @@ class ScribbleView : View {
                 canvas.drawPath(path, paint)
 
                 path.reset()
+
+                invalidate()
             }
 
             MotionEvent.ACTION_CANCEL  -> { /* unimplemented */ }
             MotionEvent.ACTION_OUTSIDE -> { /* unimplemented */ }
         }
 
-        invalidate()
-
         return true
-    }
-
-    fun clear() {
-        if(!path.isEmpty) {
-            path.reset()
-            invalidate()
-        }
     }
 }

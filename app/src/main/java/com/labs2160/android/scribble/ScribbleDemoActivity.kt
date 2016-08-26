@@ -31,7 +31,6 @@ class ScribbleDemoActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         when(item.itemId) {
             R.id.scribble_demo_activity_clear -> {
-                scribbleView.clear()
                 return true
             }
 
