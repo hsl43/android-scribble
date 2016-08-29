@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.*
 import android.support.v4.view.MotionEventCompat
 import android.util.AttributeSet
-import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -22,7 +21,7 @@ class ScribbleView : RelativeLayout {
 
     companion object {
         private const val bezelWidth = 25
-        private const val bezelBackgroundColor = Color.BLACK
+        private const val bezelBackgroundColor = Color.TRANSPARENT
 
         private const val inkStartAreaHeight = 63
         private const val inkStartAreaBackgroundColor = Color.GRAY
@@ -52,59 +51,48 @@ class ScribbleView : RelativeLayout {
             if(view.id == R.id.scribble_view_bezel) {
                 result = true
 
-                val twoPointTouch = motionEvent.pointerCount == 2
+                val twoPointTouch = MotionEventCompat.getPointerCount(motionEvent) == 2
 
-                when(MotionEventCompat.getActionMasked(motionEvent)) {
-                    MotionEvent.ACTION_POINTER_DOWN -> {
-                        Log.d(javaClass.name, "## multi-touch on bezel starting...")
-                    }
+                removeCallbacks(hideInkStartArea)
 
-                    MotionEvent.ACTION_POINTER_UP -> {
-                        Log.d(javaClass.name, "## multi-touch on bezel ending...")
-                    }
+                if(twoPointTouch) {
+                    val firstTouchY  = MotionEventCompat.getY(motionEvent, 0)
+                    val secondTouchY = MotionEventCompat.getY(motionEvent, 1)
 
-                    else -> {
-                        removeCallbacks(hideInkStartArea)
+                    if(firstTouchY < secondTouchY) {
+                        val dy = secondTouchY - firstTouchY
 
-                        if(twoPointTouch) {
-                            val firstTouchY  = motionEvent.y
-                            val secondTouchY = motionEvent.getY(1)
-
-                            if(firstTouchY < secondTouchY) {
-                                val dy = secondTouchY - firstTouchY
-
-                                with(inkStartAreaView) {
-                                    layoutParams = this.layoutParams.apply { height = inkStartAreaHeight + dy.toInt() }
-                                }
-
-                            } else if(firstTouchY > secondTouchY) {
-                                val dy = firstTouchY - secondTouchY
-
-                                with(inkStartAreaView) {
-                                    layoutParams = this.layoutParams.apply { height = inkStartAreaHeight + dy.toInt() }
-
-                                    y = secondTouchY
-                                }
-                            }
-
-                        } else {
-                            val newInkStartAreaY = motionEvent.y
-
-                            inkStartAreaView.y = newInkStartAreaY
-
-                            inkStartAreaRect.left   = 0
-                            inkStartAreaRect.top    = newInkStartAreaY.toInt()
-                            inkStartAreaRect.right  = inkStartAreaView.width
-                            inkStartAreaRect.bottom = newInkStartAreaY.toInt() + inkStartAreaView.height
-
-                            if(inkStartAreaView.visibility == View.GONE) {
-                                inkStartAreaView.visibility = View.VISIBLE
-                            }
+                        with(inkStartAreaView) {
+                            layoutParams = this.layoutParams.apply { height = inkStartAreaHeight + dy.toInt() }
                         }
 
-                        postDelayed(hideInkStartArea, inkStartAreaDisplayDuration)
+                    } else if(firstTouchY > secondTouchY) {
+                        val dy = firstTouchY - secondTouchY
+
+                        with(inkStartAreaView) {
+                            layoutParams = this.layoutParams.apply { height = inkStartAreaHeight + dy.toInt() }
+
+                            y = secondTouchY
+                        }
+                    }
+
+                } else {
+                    val y = MotionEventCompat.getY(motionEvent, 0) - (inkStartAreaView.height / 2)
+
+                    inkStartAreaView.y = y
+
+                    inkStartAreaRect.set(
+                            0,
+                            y.toInt(),
+                            inkStartAreaView.width,
+                            y.toInt() + inkStartAreaView.height)
+
+                    if(inkStartAreaView.visibility == View.GONE) {
+                        inkStartAreaView.visibility = View.VISIBLE
                     }
                 }
+
+                postDelayed(hideInkStartArea, inkStartAreaDisplayDuration)
             }
 
             result
@@ -163,8 +151,8 @@ class ScribbleView : RelativeLayout {
             return false
         }
 
-        val currentX = event.x
-        val currentY = event.y
+        val currentX = MotionEventCompat.getX(event, 0)
+        val currentY = MotionEventCompat.getY(event, 0)
 
         if(inkStartAreaRect.contains(currentX.toInt(), currentY.toInt())) {
             when(MotionEventCompat.getActionMasked(event)) {
