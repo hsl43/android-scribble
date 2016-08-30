@@ -2,8 +2,8 @@ package com.labs2160.scribble
 
 import android.content.Context
 import android.graphics.*
-import android.support.v4.view.MotionEventCompat
 import android.util.AttributeSet
+import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -21,19 +21,21 @@ class ScribbleView : RelativeLayout {
 
     companion object {
         private const val bezelWidth = 25
-        private const val bezelBackgroundColor = Color.TRANSPARENT
+        private const val bezelBackgroundColor = Color.LTGRAY
 
         private const val inkStartAreaHeight = 63
         private const val inkStartAreaBackgroundColor = Color.GRAY
         private const val inkStartAreaAlpha = .25F
         private const val inkStartAreaDisplayDuration = 3000L
+        private const val inkStartAreaCenteringBackoffPeriod = 500L
 
         private const val scribbleTolerance = 4
         private const val scribbleColor = Color.BLACK
         private const val scribbleStrokeWidth = 6F
     }
 
-    private val hideInkStartArea = Runnable { inkStartAreaView.visibility = View.GONE }
+    private var bezelViewPrimaryPointerId = -1
+    private var bezelViewSecondaryPointerId = -1
 
     private val bezelView = View(context).apply {
         id = R.id.scribble_view_bezel
@@ -51,48 +53,79 @@ class ScribbleView : RelativeLayout {
             if(view.id == R.id.scribble_view_bezel) {
                 result = true
 
-                val twoPointTouch = MotionEventCompat.getPointerCount(motionEvent) == 2
-
-                removeCallbacks(hideInkStartArea)
-
-                if(twoPointTouch) {
-                    val firstTouchY  = MotionEventCompat.getY(motionEvent, 0)
-                    val secondTouchY = MotionEventCompat.getY(motionEvent, 1)
-
-                    if(firstTouchY < secondTouchY) {
-                        val dy = secondTouchY - firstTouchY
-
-                        with(inkStartAreaView) {
-                            layoutParams = this.layoutParams.apply { height = inkStartAreaHeight + dy.toInt() }
-                        }
-
-                    } else if(firstTouchY > secondTouchY) {
-                        val dy = firstTouchY - secondTouchY
-
-                        with(inkStartAreaView) {
-                            layoutParams = this.layoutParams.apply { height = inkStartAreaHeight + dy.toInt() }
-
-                            y = secondTouchY
-                        }
-                    }
-
+                if(motionEvent.compatPointerCount() > 2) {
+                    Log.i(javaClass.name, "No more than two concurrent touch points are supported...")
                 } else {
-                    val y = MotionEventCompat.getY(motionEvent, 0) - (inkStartAreaView.height / 2)
+                    when(motionEvent.compatAction()) {
+                        MotionEvent.ACTION_DOWN -> {
+                            removeCallbacks(hideInkStartArea)
 
-                    inkStartAreaView.y = y
+                            bezelViewPrimaryPointerId = motionEvent.compatPointerId()
 
-                    inkStartAreaRect.set(
-                            0,
-                            y.toInt(),
-                            inkStartAreaView.width,
-                            y.toInt() + inkStartAreaView.height)
+                            inkStartAreaView.centerY(motionEvent)
 
-                    if(inkStartAreaView.visibility == View.GONE) {
-                        inkStartAreaView.visibility = View.VISIBLE
+                            if(inkStartAreaView.visibility == View.INVISIBLE) {
+                                inkStartAreaView.visibility = View.VISIBLE
+                            }
+                        }
+
+                        MotionEvent.ACTION_POINTER_DOWN -> {
+                            bezelViewSecondaryPointerId = motionEvent.compatPointerId()
+                        }
+
+                        MotionEvent.ACTION_MOVE -> {
+                            val twoPointTouch = if(bezelViewSecondaryPointerId > -1) true else false
+
+                            if(twoPointTouch) {
+                                val firstTouchY  = motionEvent.compatY(bezelViewPrimaryPointerId)
+                                val secondTouchY = motionEvent.compatY(bezelViewSecondaryPointerId)
+
+                                if(firstTouchY < secondTouchY) {
+                                    val dy = secondTouchY - firstTouchY
+
+                                    with(inkStartAreaView) {
+                                        layoutParams = this.layoutParams.apply { height = inkStartAreaHeight + dy.toInt() }
+                                    }
+
+                                } else if(firstTouchY > secondTouchY) {
+                                    val dy = firstTouchY - secondTouchY
+
+                                    with(inkStartAreaView) {
+                                        layoutParams = this.layoutParams.apply { height = inkStartAreaHeight + dy.toInt() }
+
+                                        y = secondTouchY
+                                    }
+                                }
+
+                            } else {
+                                if(System.currentTimeMillis() >= inkStartAreaResumeCenteringAsOf) {
+                                    inkStartAreaView.centerY(motionEvent)
+                                }
+                            }
+                        }
+
+                        MotionEvent.ACTION_POINTER_UP -> {
+                            bezelViewSecondaryPointerId = -1
+
+                            inkStartAreaResumeCenteringAsOf = System.currentTimeMillis() + inkStartAreaCenteringBackoffPeriod
+                        }
+
+                        MotionEvent.ACTION_UP -> {
+                            bezelViewPrimaryPointerId = -1
+
+                            inkStartAreaResumeCenteringAsOf = System.currentTimeMillis()
+
+                            postDelayed(hideInkStartArea, inkStartAreaDisplayDuration)
+                        }
+
+                        MotionEvent.ACTION_CANCEL -> {
+                            bezelViewPrimaryPointerId = -1
+                            bezelViewSecondaryPointerId = -1
+                        }
+
+                        MotionEvent.ACTION_OUTSIDE -> { /* unimplemented */ }
                     }
                 }
-
-                postDelayed(hideInkStartArea, inkStartAreaDisplayDuration)
             }
 
             result
@@ -109,14 +142,18 @@ class ScribbleView : RelativeLayout {
 
         alpha = inkStartAreaAlpha
 
-        visibility = View.GONE
+        visibility = View.INVISIBLE
 
         setBackgroundColor(inkStartAreaBackgroundColor)
     }
 
-    private val path = Path()
+    private var inkStartAreaResumeCenteringAsOf = System.currentTimeMillis()
 
-    private val paint = Paint().apply {
+    private val hideInkStartArea = Runnable { inkStartAreaView.visibility = View.INVISIBLE }
+
+    private val scribblePath = Path()
+
+    private val scribblePaint = Paint().apply {
         isAntiAlias = true
         isDither    = true
         color       = scribbleColor
@@ -129,10 +166,13 @@ class ScribbleView : RelativeLayout {
     private lateinit var canvasBitmap: Bitmap
     private lateinit var canvas: Canvas
 
-    private var lastX = 0F
-    private var lastY = 0F
+    private var scribblePointerId = -1
 
-    private var inkStartAreaRect = Rect(0, 0, 0, 0)
+    private var lastScribbleX = 0F
+    private var lastScribbleY = 0F
+
+//    private var bezelRect = RectF(0F, 0F, 0F, 0F)
+//    private var inkStartAreaRect = RectF(0F, 0F, 0F, 0F)
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
@@ -142,60 +182,68 @@ class ScribbleView : RelativeLayout {
     }
 
     override fun onDraw(canvas: Canvas) {
-        canvas.drawBitmap(canvasBitmap, 0F, 0F, paint)
-        canvas.drawPath(path, paint)
+        canvas.drawBitmap(canvasBitmap, 0F, 0F, scribblePaint)
+        canvas.drawPath(scribblePath, scribblePaint)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if(inkStartAreaView.visibility == View.GONE) {
+        if(inkStartAreaView.visibility == View.INVISIBLE) {
             return false
         }
 
-        val currentX = MotionEventCompat.getX(event, 0)
-        val currentY = MotionEventCompat.getY(event, 0)
+        val currentX = event.compatX(0)
+        val currentY = event.compatY(0)
 
-        if(inkStartAreaRect.contains(currentX.toInt(), currentY.toInt())) {
-            when(MotionEventCompat.getActionMasked(event)) {
+//        if(inkStartAreaRect.contains(currentX, currentY)) {
+        if(true) {
+            when(event.compatAction()) {
                 MotionEvent.ACTION_DOWN -> {
                     removeCallbacks(hideInkStartArea)
 
-                    path.reset()
-                    path.moveTo(currentX, currentY)
+                    scribblePointerId = -1
+
+                    scribblePath.reset()
+                    scribblePath.moveTo(currentX, currentY)
 
                     invalidate()
 
-                    lastX = currentX
-                    lastY = currentY
+                    lastScribbleX = currentX
+                    lastScribbleY = currentY
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = Math.abs(currentX - lastX)
-                    val dy = Math.abs(currentY - lastY)
+                    val dx = Math.abs(currentX - lastScribbleX)
+                    val dy = Math.abs(currentY - lastScribbleY)
 
                     if(dx >= scribbleTolerance || dy >= scribbleTolerance) {
-                        path.quadTo(lastX, lastY, (currentX + lastX) / 2, (currentY + lastY) / 2)
+                        scribblePath.quadTo(lastScribbleX, lastScribbleY, (currentX + lastScribbleX) / 2, (currentY + lastScribbleY) / 2)
 
                         invalidate()
 
-                        lastX = currentX
-                        lastY = currentY
+                        lastScribbleX = currentX
+                        lastScribbleY = currentY
                     }
 
                 }
 
                 MotionEvent.ACTION_UP -> {
-                    path.lineTo(lastX, lastY)
+                    scribblePointerId = -1
 
-                    canvas.drawPath(path, paint)
+                    scribblePath.lineTo(lastScribbleX, lastScribbleY)
 
-                    path.reset()
+                    canvas.drawPath(scribblePath, scribblePaint)
+
+                    scribblePath.reset()
 
                     invalidate()
 
                     postDelayed(hideInkStartArea, inkStartAreaDisplayDuration)
                 }
 
-                MotionEvent.ACTION_CANCEL  -> { /* unimplemented */ }
+                MotionEvent.ACTION_CANCEL  -> {
+                    scribblePointerId = -1
+                }
+
                 MotionEvent.ACTION_OUTSIDE -> { /* unimplemented */ }
             }
 
