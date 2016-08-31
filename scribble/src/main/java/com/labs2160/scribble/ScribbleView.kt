@@ -20,7 +20,7 @@ class ScribbleView : RelativeLayout {
     }
 
     companion object {
-        private const val bezelWidth = 25
+        private const val bezelWidth = 40
         private const val bezelBackgroundColor = Color.LTGRAY
 
         private const val inkStartAreaHeight = 63
@@ -177,8 +177,10 @@ class ScribbleView : RelativeLayout {
     private var lastScribbleX = 0F
     private var lastScribbleY = 0F
 
-//    private var bezelRect = RectF(0F, 0F, 0F, 0F)
-//    private var inkStartAreaRect = RectF(0F, 0F, 0F, 0F)
+    private var filterRule: FilterRule? = ChainFilterRule(listOf(
+            ContactSizeFilterRule(),
+            PressureFilterRule(),
+            WindowPositionFilterRule()))
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
@@ -198,7 +200,11 @@ class ScribbleView : RelativeLayout {
         }
 
         if(event.intersects(inkStartAreaView)) {
-            Log.d(javaClass.name, "## writing within inkStartAreaView...")
+            val filterResult = filterRule?.apply(event) ?: FilterRule.Result.Skipped
+
+            if(filterResult == FilterRule.Result.Failure) {
+                return true
+            }
 
             when(event.compatAction()) {
                 MotionEvent.ACTION_DOWN -> inkStartAreaTransaction {
@@ -222,14 +228,12 @@ class ScribbleView : RelativeLayout {
                     val dy = Math.abs(y - lastScribbleY)
 
                     if(dx >= scribbleTolerance || dy >= scribbleTolerance) {
-                        inkStartAreaTransaction {
-                            scribblePath.quadTo(lastScribbleX, lastScribbleY, (x + lastScribbleX) / 2, (y + lastScribbleY) / 2)
+                        scribblePath.quadTo(lastScribbleX, lastScribbleY, (x + lastScribbleX) / 2, (y + lastScribbleY) / 2)
 
-                            invalidate()
+                        invalidate()
 
-                            lastScribbleX = x
-                            lastScribbleY = y
-                        }
+                        lastScribbleX = x
+                        lastScribbleY = y
                     }
                 }
 
