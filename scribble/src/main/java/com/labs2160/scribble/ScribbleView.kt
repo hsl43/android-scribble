@@ -147,6 +147,14 @@ class ScribbleView : RelativeLayout {
         setBackgroundColor(inkStartAreaBackgroundColor)
     }
 
+    private val inkStartAreaTransaction = { behavior: () -> Unit ->
+        removeCallbacks(hideInkStartArea)
+
+        behavior()
+
+        postDelayed(hideInkStartArea, inkStartAreaDisplayDuration)
+    }
+
     private var inkStartAreaResumeCenteringAsOf = System.currentTimeMillis()
 
     private val hideInkStartArea = Runnable { inkStartAreaView.visibility = View.INVISIBLE }
@@ -165,8 +173,6 @@ class ScribbleView : RelativeLayout {
 
     private lateinit var canvasBitmap: Bitmap
     private lateinit var canvas: Canvas
-
-    private var scribblePointerId = -1
 
     private var lastScribbleX = 0F
     private var lastScribbleY = 0F
@@ -191,44 +197,43 @@ class ScribbleView : RelativeLayout {
             return false
         }
 
-        val currentX = event.compatX(0)
-        val currentY = event.compatY(0)
+        if(event.intersects(inkStartAreaView)) {
+            Log.d(javaClass.name, "## writing within inkStartAreaView...")
 
-//        if(inkStartAreaRect.contains(currentX, currentY)) {
-        if(true) {
             when(event.compatAction()) {
-                MotionEvent.ACTION_DOWN -> {
-                    removeCallbacks(hideInkStartArea)
+                MotionEvent.ACTION_DOWN -> inkStartAreaTransaction {
+                        val x = event.compatX(0)
+                        val y = event.compatY(0)
 
-                    scribblePointerId = -1
-
-                    scribblePath.reset()
-                    scribblePath.moveTo(currentX, currentY)
-
-                    invalidate()
-
-                    lastScribbleX = currentX
-                    lastScribbleY = currentY
-                }
-
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = Math.abs(currentX - lastScribbleX)
-                    val dy = Math.abs(currentY - lastScribbleY)
-
-                    if(dx >= scribbleTolerance || dy >= scribbleTolerance) {
-                        scribblePath.quadTo(lastScribbleX, lastScribbleY, (currentX + lastScribbleX) / 2, (currentY + lastScribbleY) / 2)
+                        scribblePath.reset()
+                        scribblePath.moveTo(x, y)
 
                         invalidate()
 
-                        lastScribbleX = currentX
-                        lastScribbleY = currentY
+                        lastScribbleX = x
+                        lastScribbleY = y
                     }
 
+                MotionEvent.ACTION_MOVE -> {
+                    val x = event.compatX(0)
+                    val y = event.compatY(0)
+
+                    val dx = Math.abs(x - lastScribbleX)
+                    val dy = Math.abs(y - lastScribbleY)
+
+                    if(dx >= scribbleTolerance || dy >= scribbleTolerance) {
+                        inkStartAreaTransaction {
+                            scribblePath.quadTo(lastScribbleX, lastScribbleY, (x + lastScribbleX) / 2, (y + lastScribbleY) / 2)
+
+                            invalidate()
+
+                            lastScribbleX = x
+                            lastScribbleY = y
+                        }
+                    }
                 }
 
-                MotionEvent.ACTION_UP -> {
-                    scribblePointerId = -1
-
+                MotionEvent.ACTION_UP -> inkStartAreaTransaction {
                     scribblePath.lineTo(lastScribbleX, lastScribbleY)
 
                     canvas.drawPath(scribblePath, scribblePaint)
@@ -236,13 +241,9 @@ class ScribbleView : RelativeLayout {
                     scribblePath.reset()
 
                     invalidate()
-
-                    postDelayed(hideInkStartArea, inkStartAreaDisplayDuration)
                 }
 
-                MotionEvent.ACTION_CANCEL  -> {
-                    scribblePointerId = -1
-                }
+                MotionEvent.ACTION_CANCEL -> inkStartAreaTransaction { }
 
                 MotionEvent.ACTION_OUTSIDE -> { /* unimplemented */ }
             }
