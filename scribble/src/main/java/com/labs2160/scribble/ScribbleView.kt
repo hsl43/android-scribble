@@ -5,159 +5,30 @@ import android.graphics.*
 import android.util.AttributeSet
 import android.util.Log
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
-import android.view.ViewGroup
 import android.widget.RelativeLayout
 
-class ScribbleView : RelativeLayout {
-    constructor(context: Context) : this(context, null)
+class ScribbleView : RelativeLayout, BezelView.BezelInteractionListener, InkStartAreaView.InkStartAreaInteractionListener {
+    private val scaleGestureDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScale(detector: ScaleGestureDetector): Boolean {
+            cancelHidingInkStartArea()
 
-    constructor(context: Context, attrs: AttributeSet?) : super(context, attrs) {
-        addView(bezelView)
-        addView(inkStartAreaView)
+            inkStartAreaScaleFactor *= detector.scaleFactor
 
-        setWillNotDraw(false)
-    }
+            inkStartAreaView.scaleY(inkStartAreaScaleFactor)
 
-    companion object {
-        private const val bezelWidth = 40
-        private const val bezelBackgroundColor = Color.LTGRAY
+            scheduleHidingInkStartArea()
 
-        private const val inkStartAreaHeight = 63
-        private const val inkStartAreaBackgroundColor = Color.GRAY
-        private const val inkStartAreaAlpha = .25F
-        private const val inkStartAreaDisplayDuration = 3000L
-        private const val inkStartAreaCenteringBackoffPeriod = 500L
-
-        private const val scribbleTolerance = 4
-        private const val scribbleColor = Color.BLACK
-        private const val scribbleStrokeWidth = 6F
-    }
-
-    private var bezelViewPrimaryPointerId = -1
-    private var bezelViewSecondaryPointerId = -1
-
-    private val bezelView = View(context).apply {
-        id = R.id.scribble_view_bezel
-
-        val widthRestriction  = ViewGroup.LayoutParams.WRAP_CONTENT
-        val heightRestriction = ViewGroup.LayoutParams.MATCH_PARENT
-
-        layoutParams = RelativeLayout.LayoutParams(widthRestriction, heightRestriction).apply { width = bezelWidth }
-
-        setBackgroundColor(bezelBackgroundColor)
-
-        setOnTouchListener { view, motionEvent ->
-            var result = false
-
-            if(view.id == R.id.scribble_view_bezel) {
-                result = true
-
-                if(motionEvent.compatPointerCount() > 2) {
-                    Log.i(javaClass.name, "No more than two concurrent touch points are supported...")
-                } else {
-                    when(motionEvent.compatAction()) {
-                        MotionEvent.ACTION_DOWN -> {
-                            removeCallbacks(hideInkStartArea)
-
-                            bezelViewPrimaryPointerId = motionEvent.compatPointerId()
-
-                            inkStartAreaView.centerY(motionEvent)
-
-                            if(inkStartAreaView.visibility == View.INVISIBLE) {
-                                inkStartAreaView.visibility = View.VISIBLE
-                            }
-                        }
-
-                        MotionEvent.ACTION_POINTER_DOWN -> {
-                            bezelViewSecondaryPointerId = motionEvent.compatPointerId()
-                        }
-
-                        MotionEvent.ACTION_MOVE -> {
-                            val twoPointTouch = if(bezelViewSecondaryPointerId > -1) true else false
-
-                            if(twoPointTouch) {
-                                val firstTouchY  = motionEvent.compatY(bezelViewPrimaryPointerId)
-                                val secondTouchY = motionEvent.compatY(bezelViewSecondaryPointerId)
-
-                                if(firstTouchY < secondTouchY) {
-                                    val dy = secondTouchY - firstTouchY
-
-                                    with(inkStartAreaView) {
-                                        layoutParams = this.layoutParams.apply { height = inkStartAreaHeight + dy.toInt() }
-                                    }
-
-                                } else if(firstTouchY > secondTouchY) {
-                                    val dy = firstTouchY - secondTouchY
-
-                                    with(inkStartAreaView) {
-                                        layoutParams = this.layoutParams.apply { height = inkStartAreaHeight + dy.toInt() }
-
-                                        y = secondTouchY
-                                    }
-                                }
-
-                            } else {
-                                if(System.currentTimeMillis() >= inkStartAreaResumeCenteringAsOf) {
-                                    inkStartAreaView.centerY(motionEvent)
-                                }
-                            }
-                        }
-
-                        MotionEvent.ACTION_POINTER_UP -> {
-                            bezelViewSecondaryPointerId = -1
-
-                            inkStartAreaResumeCenteringAsOf = System.currentTimeMillis() + inkStartAreaCenteringBackoffPeriod
-                        }
-
-                        MotionEvent.ACTION_UP -> {
-                            bezelViewPrimaryPointerId = -1
-
-                            inkStartAreaResumeCenteringAsOf = System.currentTimeMillis()
-
-                            postDelayed(hideInkStartArea, inkStartAreaDisplayDuration)
-                        }
-
-                        MotionEvent.ACTION_CANCEL -> {
-                            bezelViewPrimaryPointerId = -1
-                            bezelViewSecondaryPointerId = -1
-                        }
-
-                        MotionEvent.ACTION_OUTSIDE -> { /* unimplemented */ }
-                    }
-                }
-            }
-
-            result
+            return true
         }
-    }
+    })
 
-    private val inkStartAreaView = View(context).apply {
-        id = R.id.scribble_view_ink_start_area
+    private val hideInkStartArea = Runnable { inkStartAreaView.hide() }
 
-        val widthRestriction  = ViewGroup.LayoutParams.MATCH_PARENT
-        val heightRestriction = ViewGroup.LayoutParams.WRAP_CONTENT
+    private val cancelHidingInkStartArea = { removeCallbacks(hideInkStartArea) }
 
-        layoutParams = RelativeLayout.LayoutParams(widthRestriction, heightRestriction).apply { height = inkStartAreaHeight }
-
-        alpha = inkStartAreaAlpha
-
-        visibility = View.INVISIBLE
-
-        setBackgroundColor(inkStartAreaBackgroundColor)
-    }
-
-    private val inkStartAreaTransaction = { behavior: () -> Unit ->
-        removeCallbacks(hideInkStartArea)
-
-        behavior()
-
-        postDelayed(hideInkStartArea, inkStartAreaDisplayDuration)
-    }
-
-    private var inkStartAreaResumeCenteringAsOf = System.currentTimeMillis()
-
-    private val hideInkStartArea = Runnable { inkStartAreaView.visibility = View.INVISIBLE }
+    private val scheduleHidingInkStartArea = { postDelayed(hideInkStartArea, inkStartAreaDisplayDuration) }
 
     private val scribblePath = Path()
 
@@ -171,91 +42,113 @@ class ScribbleView : RelativeLayout {
         strokeWidth = scribbleStrokeWidth
     }
 
-    private lateinit var canvasBitmap: Bitmap
-    private lateinit var canvas: Canvas
+    private lateinit var bezelView: BezelView
+    private lateinit var inkStartAreaView: InkStartAreaView
 
-    private var lastScribbleX = 0F
-    private var lastScribbleY = 0F
+    private lateinit var scribbleCanvasBitmap: Bitmap
+    private lateinit var scribbleCanvas: Canvas
 
-    private var filterRule: FilterRule? = ChainFilterRule(listOf(
-            ContactSizeFilterRule(),
-            PressureFilterRule(),
-            WindowPositionFilterRule()))
+    private var scribbleLastX = 0F
+    private var scribbleLastY = 0F
+
+    private var inkStartAreaScaleFactor = 2.5F
+
+    companion object {
+        private const val scribbleTolerance = 4
+        private const val scribbleColor = Color.BLACK
+        private const val scribbleStrokeWidth = 6F
+
+        private const val inkStartAreaDisplayDuration = 1000L
+    }
+
+    constructor(context: Context) : this(context, null)
+
+    constructor(context: Context, attrs: AttributeSet?) : super(context, attrs) {
+        bezelView = BezelView(context, attrs).apply { setListener(this@ScribbleView) }
+        inkStartAreaView = InkStartAreaView(context, attrs).apply { setListener(this@ScribbleView) }
+
+        addView(bezelView)
+        addView(inkStartAreaView)
+
+        setWillNotDraw(false)
+    }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
 
-        canvasBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        canvas = Canvas(canvasBitmap)
+        scribbleCanvasBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        scribbleCanvas = Canvas(scribbleCanvasBitmap)
     }
 
     override fun onDraw(canvas: Canvas) {
-        canvas.drawBitmap(canvasBitmap, 0F, 0F, scribblePaint)
+        canvas.drawBitmap(scribbleCanvasBitmap, 0F, 0F, scribblePaint)
         canvas.drawPath(scribblePath, scribblePaint)
     }
 
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        if(inkStartAreaView.visibility == View.INVISIBLE) {
+    override fun onTouchEvent(event: MotionEvent?): Boolean {
+        if(inkStartAreaView.visibility != View.VISIBLE) {
             return false
-        }
-
-        if(event.intersects(inkStartAreaView)) {
-            val filterResult = filterRule?.apply(event) ?: FilterRule.Result.Skipped
-
-            if(filterResult == FilterRule.Result.Failure) {
-                return true
-            }
-
-            when(event.compatAction()) {
-                MotionEvent.ACTION_DOWN -> inkStartAreaTransaction {
-                        val x = event.compatX(0)
-                        val y = event.compatY(0)
-
-                        scribblePath.reset()
-                        scribblePath.moveTo(x, y)
-
-                        invalidate()
-
-                        lastScribbleX = x
-                        lastScribbleY = y
-                    }
-
-                MotionEvent.ACTION_MOVE -> {
-                    val x = event.compatX(0)
-                    val y = event.compatY(0)
-
-                    val dx = Math.abs(x - lastScribbleX)
-                    val dy = Math.abs(y - lastScribbleY)
-
-                    if(dx >= scribbleTolerance || dy >= scribbleTolerance) {
-                        scribblePath.quadTo(lastScribbleX, lastScribbleY, (x + lastScribbleX) / 2, (y + lastScribbleY) / 2)
-
-                        invalidate()
-
-                        lastScribbleX = x
-                        lastScribbleY = y
-                    }
-                }
-
-                MotionEvent.ACTION_UP -> inkStartAreaTransaction {
-                    scribblePath.lineTo(lastScribbleX, lastScribbleY)
-
-                    canvas.drawPath(scribblePath, scribblePaint)
-
-                    scribblePath.reset()
-
-                    invalidate()
-                }
-
-                MotionEvent.ACTION_CANCEL -> inkStartAreaTransaction { }
-
-                MotionEvent.ACTION_OUTSIDE -> { /* unimplemented */ }
-            }
+        } else {
+            scaleGestureDetector.onTouchEvent(event)
 
             return true
-
-        } else {
-            return false
         }
+    }
+
+    override fun onBezelTouch(x: Float, y: Float) {
+        cancelHidingInkStartArea()
+
+        inkStartAreaView.positionY(y, true)
+        inkStartAreaView.show()
+    }
+
+    override fun onBezelLongPress() {
+        Log.d(javaClass.name, "## beginning onBezelLongPress()...")
+    }
+
+    override fun onBezelMove(x: Float, y: Float) {
+        inkStartAreaView.positionY(y, true)
+    }
+
+    override fun onBezelRelease(x: Float, y: Float) {
+        scheduleHidingInkStartArea()
+    }
+
+    override fun onInkStartAreaTouch(x: Float, y: Float) {
+        cancelHidingInkStartArea()
+
+        scribblePath.reset()
+        scribblePath.moveTo(x, y)
+
+        invalidate()
+
+        scribbleLastX = x
+        scribbleLastY = y
+    }
+
+    override fun onInkStartAreaMove(x: Float, y: Float) {
+        val dx = Math.abs(x - scribbleLastX)
+        val dy = Math.abs(y - scribbleLastY)
+
+        if(dx >= scribbleTolerance || dy >= scribbleTolerance) {
+            scribblePath.quadTo(scribbleLastX, scribbleLastY, (x + scribbleLastX) / 2, (y + scribbleLastY) / 2)
+
+            invalidate()
+
+            scribbleLastX = x
+            scribbleLastY = y
+        }
+    }
+
+    override fun onInkStartAreaRelease(x: Float, y: Float) {
+        scribblePath.lineTo(scribbleLastX, scribbleLastY)
+
+        scribbleCanvas.drawPath(scribblePath, scribblePaint)
+
+        scribblePath.reset()
+
+        invalidate()
+
+        scheduleHidingInkStartArea()
     }
 }

@@ -25,7 +25,13 @@ android {
 dependencies {
     compile 'com.android.support:support-v4:23.2.0'
     compile "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    compile('com.espertech:esper:5.4.0') {
+        exclude group: 'commons-logging', module: 'commons-logging'
+    }
     testCompile 'junit:junit:4.12'
+    testCompile('org.robolectric:robolectric:3.0') {
+        exclude group: 'commons-logging', module: 'commons-logging'
+    }
     androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
         exclude group: 'com.android.support', module: 'support-annotations'
     })
